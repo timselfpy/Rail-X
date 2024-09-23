@@ -1,11 +1,31 @@
 # -*- coding: utf-8 -*-
 from PyQt5 import QtCore, QtWidgets
 from bs4 import BeautifulSoup
+import pyqtgraph as pg
+from PIL import Image
+import subprocess
+import threading
 import requests
 import datetime
+import numpy
+import sys
+
+
+pg.setConfigOption('background', 'w')
+pg.setConfigOption('foreground', 'k')
+pg.setConfigOption('imageAxisOrder', 'row-major')
 
 
 class Ui_Form(object):
+    def __init__(self):
+        self.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        if sys.platform.startswith('linux'):
+            self.system = 'Linux'
+        elif sys.platform.startswith('darwin'):
+            self.system = 'macOS'
+        elif sys.platform.startswith('win32'):
+            self.system = 'Windows'
+
     def setupUi(self, Form):
         Form.setObjectName("Form")
         Form.resize(1074, 676)
@@ -219,10 +239,18 @@ class Ui_Form(object):
         self.xiaguan_search = QtWidgets.QPushButton(self.tab_4)
         self.xiaguan_search.setObjectName("xiaguan_search")
         self.verticalLayout_4.addWidget(self.xiaguan_search)
-        self.label = QtWidgets.QLabel(self.tab_4)
-        self.label.setText("")
-        self.label.setObjectName("label")
-        self.verticalLayout_4.addWidget(self.label)
+        self.graphicsView = pg.ImageView(self.tab_4)
+        self.graphicsView.ui.histogram.hide()
+        self.graphicsView.ui.menuBtn.hide()
+        self.graphicsView.ui.roiBtn.hide()
+
+
+        self.verticalLayout_4.addWidget(self.graphicsView)
+        self.progressBar = QtWidgets.QProgressBar(self.tab_4)
+        self.progressBar.setProperty("value", 0)
+        self.progressBar.setObjectName("progressBar")
+        self.progressBar.setMaximum(100)
+        self.verticalLayout_4.addWidget(self.progressBar)
         self.xiaguan_last = QtWidgets.QPushButton(self.tab_4)
         self.xiaguan_last.setObjectName("xiaguan_last")
         self.verticalLayout_4.addWidget(self.xiaguan_last)
@@ -346,6 +374,10 @@ class Ui_Form(object):
         self.FOR_BUTTON.clicked.connect(self.emu_search_ui)
         self.FOR_BUTTON_3.clicked.connect(self.bf_ui)
         self.pushButton.clicked.connect(self.route_ui)
+        self.xiaguan_search.clicked.connect(self.train_photo_ui)
+        self.xiaguan_last.clicked.connect(self.last_page)
+        self.xiaguan_next.clicked.connect(self.next_page)
+        self.xiaguan_openfolder.clicked.connect(self.start_img_dir)
 
 
 
@@ -575,7 +607,7 @@ class Ui_Form(object):
 
         headers = {
             'Connection': 'close',
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            "User-Agent": self.user_agent
         }
         response = requests.post(f"http://www.xiaguanzhan.com/soso.asp", data={"keyword": keyword.encode("gb2312"), "Submit": "%CB%D1%CB%F7"}, headers=headers)
         response.encoding = "gbk"
@@ -590,13 +622,62 @@ class Ui_Form(object):
         return photo_url_list
 
     def train_photo_ui(self):
-        photo_list = self.train_photo(self.xiaguan_line.text())
-        for i in photo_list:
-            pass
+
+        self.img_page = 0
+        self.photo_list = self.train_photo(self.xiaguan_line.text())
+        self.directory = QtWidgets.QFileDialog.getExistingDirectory(None,"选取文件夹")  # 起始路径
+
+
+        with open(self.directory + "/Rail-X Image.jpg", "wb") as file:
+            file.write(requests.get(self.photo_list[self.img_page]).content)
+
+        self.graphicsView.setImage(numpy.array(Image.open(self.directory + "/Rail-X Image.jpg")))
+
+        threading.Thread(target=self.download_image).start()
+
+
+
+    def download_image(self):
+
+        state_a = 100 / len(self.photo_list)
+        index = 0
+
+        for i in self.photo_list:
+            with open(f"{self.directory}/{str(index)}.jpg", "wb") as file:
+                file.write(requests.get(i).content)
+            self.progressBar.setValue(int((index + 1) * state_a))
+            index += 1
+
+
+
+    def next_page(self):
+        self.img_page += 1
+        self.img_page = self.img_page % len(self.photo_list)
+        with open(self.directory + "/Rail-X Image.jpg", "wb") as file:
+            file.write(requests.get(self.photo_list[self.img_page]).content)
+
+        self.graphicsView.setImage(numpy.array(Image.open(self.directory + "/Rail-X Image.jpg")))
+
+    def last_page(self):
+        self.img_page -= 1
+        self.img_page = self.img_page % len(self.photo_list)
+        with open(self.directory + "/Rail-X Image.jpg", "wb") as file:
+            file.write(requests.get(self.photo_list[self.img_page]).content)
+
+        self.graphicsView.setImage(numpy.array(Image.open(self.directory + "/Rail-X Image.jpg")))
+
+    def start_img_dir(self):
+        if self.system == "Windows":
+            subprocess.Popen(f'explorer {self.directory}')
+        elif self.system == "macOS":
+            subprocess.Popen(['open', self.directory])
+        else:
+            subprocess.Popen(['xdg-open', self.directory])
+
+
 
 
 if __name__ == "__main__":
-    import sys
     app = QtWidgets.QApplication(sys.argv)
     Form = QtWidgets.QWidget()
     ui = Ui_Form()
